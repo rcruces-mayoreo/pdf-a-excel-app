@@ -7,7 +7,7 @@ import io
 
 st.set_page_config(page_title="PDF a Excel", page_icon="📄")
 
-st.title("📄 PDF a Excel (Tamaño Ajustado y 2 Columnas)")
+st.title("📄 PDF a Excel ")
 st.write("Sube tu archivo PDF. La herramienta convertirá cada página y las ajustará al tamaño perfecto.")
 
 archivo_pdf = st.file_uploader("Sube tu archivo PDF aquí", type=['pdf'])
