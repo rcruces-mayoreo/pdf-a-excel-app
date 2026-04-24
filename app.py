@@ -5,79 +5,83 @@ from openpyxl.drawing.image import Image as ExcelImage
 from openpyxl.styles import Font, Alignment
 import io
 
-st.set_page_config(page_title="PDF a Excel", page_icon="📄")
+st.set_page_config(page_title="PDF to Excel", page_icon="📄")
 
-st.title("📄 PDF a Excel ")
-st.write("Sube tu archivo PDF. La herramienta convertirá cada página y las ajustará al tamaño perfecto.")
+# I translated the text to English for you to practice!
+st.title("📄 PDF to Excel (Multiple Files & 2 Columns)")
+st.write("Upload one or multiple PDF files. The tool will convert every page into an image and fit them all into a single Excel file.")
 
-archivo_pdf = st.file_uploader("Sube tu archivo PDF aquí", type=['pdf'])
+# 1. ALLOW MULTIPLE FILES
+uploaded_pdfs = st.file_uploader("Upload your PDF files here", type=['pdf'], accept_multiple_files=True)
 
-if archivo_pdf is not None:
-    if st.button("Procesar y Crear Excel"):
-        with st.spinner('Procesando documento y ajustando imágenes...'):
-            pdf_bytes = archivo_pdf.read()
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+# If the list of uploaded PDFs is not empty
+if uploaded_pdfs:
+    if st.button("Process and Create Excel"):
+        with st.spinner('Processing documents... please wait.'):
             
+            # Create the Excel workbook
             wb = Workbook()
             ws = wb.active
-            ws.title = "Páginas del PDF"
+            ws.title = "PDF Pages"
             
-            # --- TÍTULO OPCIONAL --- 
-            # Replicando el título "FACTURAS" de tu Imagen 1
+            # Title inside the Excel file
             ws["D2"] = "FACTURAS"
             ws["D2"].font = Font(bold=True, size=14)
             ws["D2"].alignment = Alignment(horizontal="center")
             
-            fila_actual = 4  # Empezamos a pegar en la fila 4 (como en tu ejemplo)
+            fila_actual = 4  # Starting row in Excel
+            ancho_deseado = 500  # Desired width for the images
             
-            # --- TAMAÑO DESEADO ---
-            # 500 píxeles de ancho da un tamaño casi idéntico al de tu Imagen 1
-            ancho_deseado = 500 
+            # 2. GLOBAL IMAGE COUNTER
+            image_counter = 0 
             
-            for i in range(len(doc)):
-                pagina = doc[i]
+            # 3. LOOP THROUGH EACH PDF FILE
+            for archivo_pdf in uploaded_pdfs:
+                pdf_bytes = archivo_pdf.read()
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
                 
-                # Extraer imagen con buena calidad
-                pix = pagina.get_pixmap(dpi=150)
-                img_data = pix.tobytes("png")
-                
-                image_stream = io.BytesIO(img_data)
-                img_excel = ExcelImage(image_stream)
-                
-                # --- LA MAGIA DEL TAMAÑO ---
-                # Calculamos la proporción de alto para no deformar la imagen
-                proporcion = ancho_deseado / pix.width
-                alto_deseado = int(pix.height * proporcion)
-                
-                # Le asignamos el nuevo tamaño a la imagen de Excel
-                img_excel.width = ancho_deseado
-                img_excel.height = alto_deseado
-                
-                # --- LÓGICA DE 2 COLUMNAS (A y H) ---
-                # Si es un número par (0, 2, 4...) va en la Columna A
-                # Si es impar (1, 3, 5...) va en la Columna H
-                if i % 2 == 0:
-                    celda_destino = f"A{fila_actual}"
-                else:
-                    celda_destino = f"H{fila_actual}"
+                # Loop through each page of the current PDF
+                for pagina in doc:
+                    # Extract image
+                    pix = pagina.get_pixmap(dpi=150)
+                    img_data = pix.tobytes("png")
                     
-                ws.add_image(img_excel, celda_destino)
-                
-                # Solo bajamos de fila cuando ya pusimos las 2 imágenes en la misma fila
-                if i % 2 != 0:
-                    # Una fila de Excel mide aprox 20 píxeles de alto.
-                    # Calculamos cuántas filas ocupa la imagen y le sumamos 2 filas de margen.
-                    filas_necesarias = int(alto_deseado / 20) + 2
-                    fila_actual += filas_necesarias
+                    image_stream = io.BytesIO(img_data)
+                    img_excel = ExcelImage(image_stream)
+                    
+                    # Resize logic
+                    proporcion = ancho_deseado / pix.width
+                    alto_deseado = int(pix.height * proporcion)
+                    
+                    img_excel.width = ancho_deseado
+                    img_excel.height = alto_deseado
+                    
+                    # 4. COLUMN LOGIC USING THE GLOBAL COUNTER
+                    if image_counter % 2 == 0:
+                        celda_destino = f"A{fila_actual}"
+                    else:
+                        celda_destino = f"H{fila_actual}"
+                        
+                    ws.add_image(img_excel, celda_destino)
+                    
+                    # Move to the next row only when the right column (H) is filled
+                    if image_counter % 2 != 0:
+                        filas_necesarias = int(alto_deseado / 20) + 2
+                        fila_actual += filas_necesarias
+                    
+                    # Increase the counter for the next image
+                    image_counter += 1
             
+            # Save Excel in memory
             excel_buffer = io.BytesIO()
             wb.save(excel_buffer)
             excel_buffer.seek(0)
             
-            st.success("¡El proceso ha terminado con éxito! 🎉")
+            st.success("Process completed successfully! 🎉")
             
+            # Download button
             st.download_button(
-                label="📥 Descargar archivo Excel",
+                label="📥 Download Excel file",
                 data=excel_buffer,
                 file_name="auditoria_facturas.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
