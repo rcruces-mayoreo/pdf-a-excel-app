@@ -8,7 +8,7 @@ import io
 st.set_page_config(page_title="PDF to Excel", page_icon="📄")
 
 # I translated the text to English for you to practice!
-st.title("📄 PDF to Excel (Multiple Files & 2 Columns)")
+st.title("📄 PDF to Excel ")
 st.write("Upload one or multiple PDF files. The tool will convert every page into an image and fit them all into a single Excel file.")
 
 # 1. ALLOW MULTIPLE FILES
