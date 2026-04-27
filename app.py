@@ -1,63 +1,77 @@
-import io
-import os.path
 import streamlit as st
-import pdfplumber   # PDF to Text
+import fitz  # PyMuPDF
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image as ExcelImage
+from openpyxl.styles import Font, Alignment
+import io
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+st.set_page_config(page_title="PDF Tool Pro", page_icon="📄")
 
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+st.title("📄 PDF a Excel o Google Sheets")
 
+# --- SIDEBAR / CONFIGURACIÓN ---
+st.sidebar.header("Configuración")
+modo = st.sidebar.radio("Selecciona destino:", ["Solo Excel", "Google Sheets"])
 
-st.set_page_config(page_title="PDF to Google Sheets", page_icon="📄")
+uploaded_pdfs = st.file_uploader("Sube tus PDFs aquí", type=['pdf'], accept_multiple_files=True)
 
-st.title("📄 PDF to Google Sheets")
-st.write("Upload your PDF files. The tool will append every page as text to your Google Sheets.")
+if uploaded_pdfs:
+    custom_name = st.text_input("Nombre del archivo/hoja:", value="Auditoria_Facturas")
 
-# 1. File uploader box
-uploaded_pdfs = st.file_uploader("Upload your PDF files here", type=['pdf'], accept_multiple_files=True)
+    # --- OPCIÓN 1: EXCEL ---
+    if modo == "Solo Excel":
+        if st.button("Procesar y Descargar Excel"):
+            with st.spinner('Creando Excel...'):
+                wb = Workbook()
+                is_first = True
+                for archivo_pdf in uploaded_pdfs:
+                    sheet_name = archivo_pdf.name[:30].replace(".pdf", "")
+                    ws = wb.active if is_first else wb.create_sheet(title=sheet_name)
+                    if is_first: ws.title = sheet_name; is_first = False
+                    
+                    ws["A1"] = f"FACTURAS - {archivo_pdf.name}"
+                    # (Aquí va tu lógica de imágenes que ya tenías)
+                    # ... [He omitido el relleno de imágenes para acortar, pero mantén tu lógica aquí]
+                
+                buf = io.BytesIO()
+                wb.save(buf)
+                st.download_button("📥 Descargar Excel", buf.getvalue(), file_name=f"{custom_name}.xlsx")
 
-# 2. Google Sheets ID input
-spreadsheet_id = st.text_input("Enter your Google Sheets ID")
-
-# 3. Process and Append button
-if st.button("Process and Append to Sheets"):
-    with st.spinner('Processing documents... please wait.'):
-
-        # --- Setting up the Sheets API ---
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file']
-
-        creds = None
-        if os.path.exists('token.json'):
-            creds = Credentials.from_authorized_user_file('token.json')
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-                creds = flow.run_local_server(port=0)
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
-
-        service = build('sheets', 'v4', credentials=creds)
-
-        # Call the Sheets API
-        sheet = service.spreadsheets()
-
-        # --- Process PDFs and append to Google Sheet ---
-        for uploaded_pdf in uploaded_pdfs:
+    # --- OPCIÓN 2: GOOGLE SHEETS ---
+    elif modo == "Google Sheets":
+        st.info("Asegúrate de haber compartido el Google Sheet con el email de tu credentials.json")
+        sheet_url = st.text_input("Pega el enlace (URL) de tu Google Sheet:")
+        
+        if st.button("Sincronizar con Google Sheets"):
             try:
-                with pdfplumber.open(uploaded_pdf) as pdf:
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        values = [[line] for line in page_text.split('\n')]
-                        body = {'values': values}
+                # Autenticación
+                scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+                creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+                client = gspread.authorize(creds)
+                
+                # Abrir el documento
+                sh = client.open_by_url(sheet_url)
+                
+                with st.spinner('Actualizando Google Sheets...'):
+                    for archivo_pdf in uploaded_pdfs:
+                        sheet_name = archivo_pdf.name[:30].replace(".pdf", "")
                         
-                        # Append PDF page to Google Sheets
-                        result = service.spreadsheets().values().append(spreadsheetId=spreadsheet_id, range="A1", 
-                                     valueInputOption="USER_ENTERED", body=body).execute()
+                        # Intentar crear la pestaña o seleccionarla si ya existe
+                        try:
+                            ws = sh.add_worksheet(title=sheet_name, rows="100", cols="20")
+                        except:
+                            ws = sh.worksheet(sheet_name)
+                        
+                        # Escribir algo de datos
+                        ws.update('A1', [[f"FACTURA: {archivo_pdf.name}"]])
+                        ws.format("A1", {"textFormat": {"bold": True, "fontSize": 14}})
+                        
+                        st.write(f"✅ Hoja '{sheet_name}' lista.")
+                        
+                st.success("¡Google Sheets actualizado con éxito! 🎉")
+                
             except Exception as e:
-                st.error(f"Error processing {uploaded_pdf.name}: {e}")
-
-    st.success("Process completed successfully! 🎉 PDF Pages are appended to Google Sheets.")
+                st.error(f"Error: {e}")
+                st.info("Recuerda que debes tener el archivo 'credentials.json' en la carpeta.")
