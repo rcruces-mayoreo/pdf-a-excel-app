@@ -10,9 +10,20 @@ st.set_page_config(page_title="PDF to Excel", page_icon="📄")
 st.title("📄 PDF to Excel (Separate Sheets)")
 st.write("Upload multiple PDF files. The tool will convert every page into an image and place each PDF file in its own separate Excel sheet.")
 
+# 1. File uploader box
 uploaded_pdfs = st.file_uploader("Upload your PDF files here", type=['pdf'], accept_multiple_files=True)
 
+# 2. Everything inside here is HIDDEN until you upload a file
 if uploaded_pdfs:
+    
+    # --- NEW FEATURE: Custom File Name ---
+    custom_name = st.text_input("Enter the name for your Excel file:", value="auditoria_facturas")
+    
+    # We add .xlsx if you forget to type it
+    if not custom_name.endswith(".xlsx"):
+        custom_name += ".xlsx"
+
+    # 3. The process button
     if st.button("Process and Create Excel"):
         with st.spinner('Processing documents... please wait.'):
             
@@ -27,15 +38,12 @@ if uploaded_pdfs:
             for archivo_pdf in uploaded_pdfs:
                 
                 # --- PREPARE THE SHEET NAME ---
-                # 1. Get the file name and remove ".pdf"
                 sheet_name = archivo_pdf.name.replace(".pdf", "")
                 
-                # 2. Remove characters that Excel doesn't allow in sheet names
                 invalid_chars =['\\', '/', '?', '*', '[', ']', ':']
                 for char in invalid_chars:
                     sheet_name = sheet_name.replace(char, "")
                     
-                # 3. Excel only allows 31 characters max for a sheet name
                 sheet_name = sheet_name[:31] 
                 
                 # --- CREATE OR REUSE THE SHEET ---
@@ -44,6 +52,14 @@ if uploaded_pdfs:
                     ws.title = sheet_name
                     is_first_sheet = False
                 else:
+                    # Prevent crashes if two PDFs have the same name
+                    original_sheet_name = sheet_name
+                    counter = 1
+                    while sheet_name in wb.sheetnames:
+                        suffix = f"_{counter}"
+                        sheet_name = original_sheet_name[:(31 - len(suffix))] + suffix
+                        counter += 1
+                        
                     ws = wb.create_sheet(title=sheet_name)
                 
                 # --- SET UP THE NEW SHEET ---
@@ -51,13 +67,25 @@ if uploaded_pdfs:
                 ws["D2"].font = Font(bold=True, size=14)
                 ws["D2"].alignment = Alignment(horizontal="center")
                 
-                # Reset the counters for THIS specific sheet
+                # Make columns A and H wider for better presentation
+                ws.column_dimensions['A'].width = 70
+                ws.column_dimensions['H'].width = 70
+                
                 fila_actual = 4  
                 image_counter = 0 
                 
                 # Read the PDF
                 pdf_bytes = archivo_pdf.read()
-                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                
+                # Prevent crashes from corrupted or password-protected PDFs
+                try:
+                    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                    if doc.needs_pass:
+                        st.warning(f"File {archivo_pdf.name} is password protected and was skipped.")
+                        continue
+                except Exception as e:
+                    st.error(f"Error processing {archivo_pdf.name}: {e}")
+                    continue
                 
                 # Loop through each page
                 for pagina in doc:
@@ -97,6 +125,6 @@ if uploaded_pdfs:
             st.download_button(
                 label="📥 Download Excel file",
                 data=excel_buffer,
-                file_name="auditoria_facturas.xlsx",
+                file_name=custom_name, # USING THE CUSTOM NAME HERE
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
